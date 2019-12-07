@@ -1,0 +1,19 @@
+{
+  "name": "homebridge-switcher-wh",
+  "version": "1.0.0",
+  "description": "homebridge plugin for switcher smart water heater",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnathanvidu/homebridge-switcher-wh.git"
+  },
+  "author": "Johnathan Viduchinsky",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/johnathanvidu/homebridge-switcher-wh/issues"
+  },
+  "homepage": "https://github.com/johnathanvidu/homebridge-switcher-wh#readme"
+}

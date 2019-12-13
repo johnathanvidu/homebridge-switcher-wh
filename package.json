@@ -15,5 +15,8 @@
   "bugs": {
     "url": "https://github.com/johnathanvidu/homebridge-switcher-wh/issues"
   },
+  "dependencies": {
+    "python-struct": "^1.1.2"
+  },
   "homepage": "https://github.com/johnathanvidu/homebridge-switcher-wh#readme"
 }

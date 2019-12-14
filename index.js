@@ -1,6 +1,6 @@
 'use strict'
 
-var switcher = require('./ref/switcher');
+var switcher = require('switcher-js');
 
 
 let Service, Characteristic;
@@ -69,7 +69,11 @@ class SwitcherAccessory {
             .setCharacteristic(Characteristic.Model, 'SwitcherV' + this.config['switcher_version'])
             .setCharacteristic(Characteristic.SerialNumber, 'homebridge-switcher-wh');
 
-        return [informationService, this.service, this.stupid_switch];
+        var services = [informationService, this.service];
+        if (this.stupid_switch) {
+            services.push(this.stupid_switch);
+        }
+        return services;
     }
 
     getActiveCharacteristicHandler(callback) {

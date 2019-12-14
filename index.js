@@ -1,6 +1,6 @@
 'use strict'
 
-var switcher = require('switcher-js');
+var switcher = require('./ref/switcher');
 
 
 let Service, Characteristic;
@@ -16,38 +16,60 @@ class SwitcherAccessory {
     constructor (log, config) {
         this.log = log
         this.config = config
-        this.service = new Service.Valve(this.config.name)
-        this.switcher = new switcher.Switcher(config, log)
-        this.status_interval = config['status_interval'] || 5000; 
-        this.status = null;
+        this.service = this._init_valve_service();
+        this.stupid_switch = this._init_stupid_switch();
 
-        this.service.getCharacteristic(Characteristic.Active)
-        .on('get', this.getActiveCharacteristicHandler.bind(this))
-        .on('set', this.setActiveCharacteristicHandler.bind(this));
-        this.service.getCharacteristic(Characteristic.InUse)
-        .on('get', this.getInUseCharacteristicHandler.bind(this));
-        this.service.getCharacteristic(Characteristic.ValveType).updateValue(3);  // that will set shower head icon - can set it in the config.json
-        this.service.addCharacteristic(Characteristic.SetDuration);
-        this.service.addCharacteristic(Characteristic.RemainingDuration);
-
-        setInterval(() => {
-            this.log('fetching status...')
-            this.switcher.status((device_status) => {
-                this.status = device_status;
-                this.service.getCharacteristic(Characteristic.InUse).updateValue(device_status.state);
-                this.service.getCharacteristic(Characteristic.Active).updateValue(device_status.state);
-                this.service.getCharacteristic(Characteristic.RemainingDuration).updateValue(device_status.remaining_seconds)
-                this.log('fetched status', "state " + device_status.state + ' remaining sec ' + device_status.remaining_seconds);
-            });
-        }, this.status_interval);
+        // connect to switcher and wait for ready event 
+        var handler = switcher.connect(config, log);
+        handler.on('ready', (switcher) => {
+            this.switcher = switcher;
+            this._listen_to_status_updates();
+        });
     }
   
+    _listen_to_status_updates() {
+        this.switcher.on('status', (device_status) => {
+            this._update_state_related_characteristics(device_status.state);
+            this.service.getCharacteristic(Characteristic.RemainingDuration).updateValue(device_status.remaining_seconds);
+        });
+    }
+
+    _update_state_related_characteristics(state) {
+        this.service.getCharacteristic(Characteristic.InUse).updateValue(state);
+        this.service.getCharacteristic(Characteristic.Active).updateValue(state);
+        if (this.stupid_switch) {
+            this.stupid_switch.getCharacteristic(Characteristic.On).updateValue(state);
+        }
+    }
+
+    _init_valve_service() {
+        var service = new Service.Valve(this.config.name);
+        service.getCharacteristic(Characteristic.Active)
+        .on('get', this.getActiveCharacteristicHandler.bind(this))
+        .on('set', this.setActiveCharacteristicHandler.bind(this));
+        service.getCharacteristic(Characteristic.InUse)
+        .on('get', this.getInUseCharacteristicHandler.bind(this));
+        service.setCharacteristic(Characteristic.ValveType, this.config['icon'] || 2); // that will set shower head icon - can set it in the config.json
+        service.setCharacteristic(Characteristic.SetDuration, this.config['default_duration'] * 60 || 0); // this will replace the 0 seconds with the time configured in default_duration
+        service.addCharacteristic(Characteristic.RemainingDuration);
+        return service;
+    }
+    
+    _init_stupid_switch() {
+        if (!this.config['include_stupid_switch']) return null;
+        var stupid_switch = new Service.Switch(this.config.name);
+        stupid_switch.getCharacteristic(Characteristic.On)
+        .on('set', this.setStupidSwitchOnHandler.bind(this));
+        return stupid_switch;
+    }
+
     getServices () {
         const informationService = new Service.AccessoryInformation()
-            .setCharacteristic(Characteristic.Manufacturer, 'switcher')
-            .setCharacteristic(Characteristic.Model, 'SwitcherV' + this.config['switcher-version'])
+            .setCharacteristic(Characteristic.Manufacturer, 'johnathanvidu')
+            .setCharacteristic(Characteristic.Model, 'SwitcherV' + this.config['switcher_version'])
             .setCharacteristic(Characteristic.SerialNumber, 'homebridge-switcher-wh');
-        return [informationService, this.service]
+
+        return [informationService, this.service, this.stupid_switch];
     }
 
     getActiveCharacteristicHandler(callback) {
@@ -55,37 +77,34 @@ class SwitcherAccessory {
     }
 
     setActiveCharacteristicHandler (value, callback) {
-        /* this is called when HomeKit wants to update the value of the characteristic as defined in our getServices() function */
-    
-        /*
-        * The desired value is available in the `value` argument.
-        * This is just an example so we will just assign the value to a variable which we can retrieve in our get handler
-        */
-       /* Log to the console the value whenever this function is called */
-        this.log('setActiveCharacteristicHandler got value of ', value)
-
-        if (value == 0) {
-            this.switcher.off(); 
-            this.log('setting switcher off nontheless');
-        }
-        else {
-            var duration = this.service.getCharacteristic(Characteristic.SetDuration).value;
-            if (duration == 0) this.switcher.on_with(Math.floor(duration / 60));
-            else this.switcher.on();
-            
-            this.log('setting switcher on nontheless');
-        }
-
-        this.service.getCharacteristic(Characteristic.InUse).updateValue(value)
-
-        /*
-        * The callback function should be called to return the value
-        * The first argument in the function should be null unless and error occured
-        */
-        callback(null, value)
+        this._switcherPower(value, this.service.getCharacteristic(Characteristic.SetDuration).value);
+        callback(null, value);
     }
 
     getInUseCharacteristicHandler(callback) {
-        callback(null, this.service.getCharacteristic(Characteristic.InUse).value);
+        callback(null, this.service.getCharacteristic(Characteristic.InUse).value); // SetDuration is set by the home app as seconds
+    }
+
+    setStupidSwitchOnHandler(value, callback) {
+        this._switcherPower(value, 0);
+        callback(null, value);
+    }
+
+    _switcherPower(value, duration) {
+        if (!this.switcher) {
+            this.log.warn('switcher has yet to connect');
+            return;
+        }
+
+        this.switcher.on('state', (switch_state) => {
+            this._update_state_related_characteristics(switch_state);
+        });
+
+        if (value == switcher.OFF) {
+            this.switcher.turn_off(); 
+        }
+        else {
+            this.switcher.turn_on(Math.floor(duration / 60));
+        }
     }
   }

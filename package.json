@@ -1,6 +1,6 @@
 {
   "name": "homebridge-switcher-wh",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "homebridge plugin for switcher smart water heater",
   "main": "index.js",
   "scripts": {

@@ -72,7 +72,7 @@ class SwitcherAccessory {
             ignore.push('device.ip ' + device_config.ip);
         }
         var ignore_text = ignore.length == 0 ? '' : 'ignoring ' + ignore.join(', ') + '...';
-        this.log.info('starting swithcer device discovery...');
+        this.log.info('starting switcher device discovery...');
         if (ignore_text) {
             this.log.info(ignore_text);
         }
